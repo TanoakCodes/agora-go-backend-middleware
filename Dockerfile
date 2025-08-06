@@ -1,58 +1,35 @@
-# Start from a Debian image with the latest version of Go installed
-FROM golang:1.21-alpine
+# Stage 1: Build the application
+# We use a Go-specific image to compile the source code.
+FROM golang:1.20-alpine AS builder
 
-# Install git and ca-certificates
-RUN apk add --no-cache git ca-certificates
-
-# Set the working directory inside the container
+# Set the working directory inside the container.
 WORKDIR /app
 
-# Copy go.mod and go.sum files
-COPY go.mod go.sum ./
+# Copy the Go module files to download dependencies.
+COPY go.mod .
+COPY go.sum .
 
-# Download dependencies
+# Download dependencies. This is cached for faster future builds.
 RUN go mod download
 
-# Copy the entire project
+# Copy the rest of the source code.
 COPY . .
 
-# Declare build-time ARGs
-ARG APP_ID
-ARG APP_CERTIFICATE
-ARG CUSTOMER_ID
-ARG CUSTOMER_SECRET
-ARG SERVER_PORT
-ARG CORS_ALLOW_ORIGIN
-ARG AGORA_BASE_URL
-ARG AGORA_CLOUD_RECORDING_URL
-ARG AGORA_RTT_URL
-ARG STORAGE_VENDOR
-ARG STORAGE_REGION
-ARG STORAGE_BUCKET
-ARG STORAGE_BUCKET_ACCESS_KEY
-ARG STORAGE_BUCKET_SECRET_KEY
+# Build the application and save the executable as 'server'.
+RUN go build -o server cmd/main.go
 
-# Set them as persistent ENV variables
-ENV APP_ID=$APP_ID \
-    APP_CERTIFICATE=$APP_CERTIFICATE \
-    CUSTOMER_ID=$CUSTOMER_ID \
-    CUSTOMER_SECRET=$CUSTOMER_SECRET \
-    SERVER_PORT=$SERVER_PORT \
-    CORS_ALLOW_ORIGIN=$CORS_ALLOW_ORIGIN \
-    AGORA_BASE_URL=$AGORA_BASE_URL \
-    AGORA_CLOUD_RECORDING_URL=$AGORA_CLOUD_RECORDING_URL \
-    AGORA_RTT_URL=$AGORA_RTT_URL \
-    STORAGE_VENDOR=$STORAGE_VENDOR \
-    STORAGE_REGION=$STORAGE_REGION \
-    STORAGE_BUCKET=$STORAGE_BUCKET \
-    STORAGE_BUCKET_ACCESS_KEY=$STORAGE_BUCKET_ACCESS_KEY \
-    STORAGE_BUCKET_SECRET_KEY=$STORAGE_BUCKET_SECRET_KEY
+# Stage 2: Create a clean final image
+# We use a minimal Alpine Linux image to keep the final container small and secure.
+FROM alpine:latest
 
-# Build the application
-RUN go build -v -o agora-backend-middleware ./cmd/main.go
+# Set the working directory inside the final container.
+WORKDIR /root/
 
-# Run the application
-CMD ["./agora-backend-middleware"]
+# Copy only the compiled 'server' binary from the 'builder' stage.
+COPY --from=builder /app/server .
 
-# Document that the service listens on the specified port
-EXPOSE $SERVER_PORT
+# Expose the port that the application listens on.
+EXPOSE 8080
+
+# Set the command to run the executable when the container starts.
+CMD ["./server"]
